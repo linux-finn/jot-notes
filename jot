@@ -1,0 +1,443 @@
+#!/bin/bash
+# jot - Simple note-taking CLI tool
+
+# Configuration
+JOT_DIR="$HOME/Nextcloud/Notes/Jot"
+EDITOR="${EDITOR:-nano}"
+
+# Main function to handle commands
+main() {
+    case "$1" in
+        "")
+            echo "❌ Please provide a note title"
+            echo "💡 Usage: jot \"Note title\""
+            echo "💡 Try: jot help"
+            ;;
+        "task")
+            create_task "$2"
+            ;;
+        "doc")
+            create_document "$2"
+            ;;
+        "find")
+            search_notes "$2"
+            ;;
+        "list")
+            list_notes "$2"
+            ;;
+        "done")
+            mark_done "$2"
+            ;;
+        "help")
+            show_help
+            ;;
+        "setup")
+            setup_jot
+            ;;
+        *)
+            # Default: create a regular note
+            create_note "$1"
+            ;;
+    esac
+}
+
+# Create a regular note
+create_note() {
+    local title="$1"
+    
+    if [[ -z "$title" ]]; then
+        echo "❌ Please provide a note title"
+        echo "💡 Usage: jot \"Note title\""
+        return 1
+    fi
+    
+    # Check if setup was run
+    if [[ ! -d "$JOT_DIR/notes" ]]; then
+        echo "❌ Jot not set up. Run: jot setup"
+        return 1
+    fi
+    
+    # Create filename from title
+    local date=$(date +%Y-%m-%d)
+    local filename="${title// /-}"  # Replace spaces with dashes
+    local file="$JOT_DIR/notes/${date}_${filename}.txt"
+    
+    echo "📝 Creating note: $title"
+    
+    # Create note with basic structure
+    cat > "$file" << EOF
+📝 $title
+
+Created: $(date '+%A, %B %d, %Y at %H:%M')
+
+---
+
+EOF
+    
+    # Open in editor
+    $EDITOR "$file"
+    echo "✅ Note saved: $title"
+}
+
+# Create a task
+create_task() {
+    local task="$1"
+    
+    if [[ -z "$task" ]]; then
+        echo "❌ Please provide a task description"
+        echo "💡 Usage: jot task \"Task description\""
+        return 1
+    fi
+    
+    # Check if setup was run
+    if [[ ! -d "$JOT_DIR/tasks" ]]; then
+        echo "❌ Jot not set up. Run: jot setup"
+        return 1
+    fi
+    
+    # Create filename from task
+    local date=$(date +%Y-%m-%d)
+    local filename="${task// /-}"  # Replace spaces with dashes
+    local file="$JOT_DIR/tasks/TASK_${date}_${filename}.txt"
+    
+    echo "📋 Creating task: $task"
+    
+    # Create task with checkbox format
+    cat > "$file" << EOF
+📋 Task: $task
+
+Created: $(date '+%A, %B %d, %Y at %H:%M')
+Status: [ ] Pending
+
+---
+
+[ ] $task
+
+Notes:
+
+
+Priority: 
+Due Date: 
+Tags: 
+
+EOF
+    
+    # Open in editor
+    $EDITOR "$file"
+    echo "✅ Task created: $task"
+}
+
+# Create a document
+create_document() {
+    local title="$1"
+    
+    if [[ -z "$title" ]]; then
+        echo "❌ Please provide a document title"
+        echo "💡 Usage: jot doc \"Document title\""
+        return 1
+    fi
+    
+    # Check if setup was run
+    if [[ ! -d "$JOT_DIR/docs" ]]; then
+        echo "❌ Jot not set up. Run: jot setup"
+        return 1
+    fi
+    
+    # Create filename from title
+    local filename="${title// /-}"  # Replace spaces with dashes
+    local file="$JOT_DIR/docs/${filename}.txt"
+    
+    echo "📄 Creating document: $title"
+    
+    # Create document with structure
+    cat > "$file" << EOF
+📄 $title
+
+Created: $(date '+%A, %B %d, %Y at %H:%M')
+Author: $(whoami)
+
+---
+
+# $title
+
+## Overview
+
+
+## Details
+
+
+## Notes
+
+
+---
+Last updated: $(date '+%Y-%m-%d %H:%M')
+
+EOF
+    
+    # Open in editor
+    $EDITOR "$file"
+    echo "✅ Document saved: $title"
+}
+
+# Search all notes
+search_notes() {
+    local term="$1"
+    
+    if [[ -z "$term" ]]; then
+        echo "❌ Please provide a search term"
+        echo "💡 Usage: jot find \"keyword\""
+        return 1
+    fi
+    
+    echo "🔍 Searching all notes for: $term"
+    
+    if [[ ! -d "$JOT_DIR" ]]; then
+        echo "❌ Jot not set up. Run: jot setup"
+        return 1
+    fi
+    
+    # Search and show results with context
+    local found=0
+    
+    # Search notes
+    if [[ -d "$JOT_DIR/notes" ]]; then
+        while IFS= read -r -d '' file; do
+            if grep -q -i "$term" "$file"; then
+                local filename=$(basename "$file" .txt)
+                echo "  📝 Note: $filename"
+                grep -i -n "$term" "$file" | head -2 | while IFS=: read line content; do
+                    echo "      Line $line: $content"
+                done
+                found=1
+            fi
+        done < <(find "$JOT_DIR/notes" -name "*.txt" -print0 2>/dev/null)
+    fi
+    
+    # Search tasks
+    if [[ -d "$JOT_DIR/tasks" ]]; then
+        while IFS= read -r -d '' file; do
+            if grep -q -i "$term" "$file"; then
+                local filename=$(basename "$file" .txt)
+                echo "  📋 Task: $filename"
+                grep -i -n "$term" "$file" | head -2 | while IFS=: read line content; do
+                    echo "      Line $line: $content"
+                done
+                found=1
+            fi
+        done < <(find "$JOT_DIR/tasks" -name "*.txt" -print0 2>/dev/null)
+    fi
+    
+    # Search docs
+    if [[ -d "$JOT_DIR/docs" ]]; then
+        while IFS= read -r -d '' file; do
+            if grep -q -i "$term" "$file"; then
+                local filename=$(basename "$file" .txt)
+                echo "  📄 Doc: $filename"
+                grep -i -n "$term" "$file" | head -2 | while IFS=: read line content; do
+                    echo "      Line $line: $content"
+                done
+                found=1
+            fi
+        done < <(find "$JOT_DIR/docs" -name "*.txt" -print0 2>/dev/null)
+    fi
+    
+    if [[ $found -eq 0 ]]; then
+        echo "  No results found for '$term'"
+    fi
+}
+
+# List notes
+list_notes() {
+    local category="$1"
+    
+    if [[ ! -d "$JOT_DIR" ]]; then
+        echo "❌ Jot not set up. Run: jot setup"
+        return 1
+    fi
+    
+    case "$category" in
+        "tasks")
+            echo "📋 Recent tasks:"
+            if [[ -d "$JOT_DIR/tasks" ]]; then
+                ls -t "$JOT_DIR/tasks"/*.txt 2>/dev/null | head -10 | while read file; do
+                    local filename=$(basename "$file" .txt)
+                    local task_name=${filename#TASK_*_}  # Remove TASK_DATE_ prefix
+                    task_name=${task_name//-/ }  # Replace dashes with spaces
+                    echo "  📋 $task_name"
+                done
+                
+                if [[ ! -f "$JOT_DIR/tasks"/*.txt ]] 2>/dev/null; then
+                    echo "  No tasks found yet."
+                    echo "  💡 Try: jot task \"Your first task\""
+                fi
+            fi
+            ;;
+        "docs")
+            echo "📄 Recent documents:"
+            if [[ -d "$JOT_DIR/docs" ]]; then
+                ls -t "$JOT_DIR/docs"/*.txt 2>/dev/null | head -10 | while read file; do
+                    local filename=$(basename "$file" .txt)
+                    filename=${filename//-/ }  # Replace dashes with spaces
+                    echo "  📄 $filename"
+                done
+                
+                if [[ ! -f "$JOT_DIR/docs"/*.txt ]] 2>/dev/null; then
+                    echo "  No documents found yet."
+                    echo "  💡 Try: jot doc \"Your first document\""
+                fi
+            fi
+            ;;
+        *)
+            echo "📝 Recent notes (all types):"
+            
+            # Show recent notes
+            if [[ -d "$JOT_DIR/notes" ]]; then
+                echo "  📝 Notes:"
+                ls -t "$JOT_DIR/notes"/*.txt 2>/dev/null | head -5 | while read file; do
+                    local filename=$(basename "$file" .txt)
+                    local note_name=${filename#*_}  # Remove date prefix
+                    note_name=${note_name//-/ }  # Replace dashes with spaces
+                    echo "    📝 $note_name"
+                done
+                
+                if [[ ! -f "$JOT_DIR/notes"/*.txt ]] 2>/dev/null; then
+                    echo "    No notes found yet."
+                fi
+            fi
+            
+            # Show recent tasks
+            if [[ -d "$JOT_DIR/tasks" ]]; then
+                echo "  📋 Tasks:"
+                ls -t "$JOT_DIR/tasks"/*.txt 2>/dev/null | head -5 | while read file; do
+                    local filename=$(basename "$file" .txt)
+                    local task_name=${filename#TASK_*_}  # Remove TASK_DATE_ prefix
+                    task_name=${task_name//-/ }  # Replace dashes with spaces
+                    echo "    📋 $task_name"
+                done
+                
+                if [[ ! -f "$JOT_DIR/tasks"/*.txt ]] 2>/dev/null; then
+                    echo "    No tasks found yet."
+                fi
+            fi
+            
+            # Show recent docs
+            if [[ -d "$JOT_DIR/docs" ]]; then
+                echo "  📄 Documents:"
+                ls -t "$JOT_DIR/docs"/*.txt 2>/dev/null | head -5 | while read file; do
+                    local filename=$(basename "$file" .txt)
+                    filename=${filename//-/ }  # Replace dashes with spaces
+                    echo "    📄 $filename"
+                done
+                
+                if [[ ! -f "$JOT_DIR/docs"/*.txt ]] 2>/dev/null; then
+                    echo "    No documents found yet."
+                fi
+            fi
+            
+            if [[ ! -f "$JOT_DIR/notes"/*.txt && ! -f "$JOT_DIR/tasks"/*.txt && ! -f "$JOT_DIR/docs"/*.txt ]] 2>/dev/null; then
+                echo "  💡 Try: jot \"Your first note\""
+            fi
+            ;;
+    esac
+}
+
+# Mark task as done
+mark_done() {
+    local partial_name="$1"
+    
+    if [[ -z "$partial_name" ]]; then
+        echo "❌ Please provide part of the task name"
+        echo "💡 Usage: jot done \"partial task name\""
+        return 1
+    fi
+    
+    if [[ ! -d "$JOT_DIR/tasks" ]]; then
+        echo "❌ No tasks directory found. Run: jot setup"
+        return 1
+    fi
+    
+    # Find matching task file
+    local found_file=""
+    while IFS= read -r -d '' file; do
+        local filename=$(basename "$file" .txt)
+        if [[ "$filename" == *"$partial_name"* ]]; then
+            found_file="$file"
+            break
+        fi
+    done < <(find "$JOT_DIR/tasks" -name "*.txt" -print0 2>/dev/null)
+    
+    if [[ -z "$found_file" ]]; then
+        echo "❌ No task found matching: $partial_name"
+        echo "💡 Try: jot list tasks"
+        return 1
+    fi
+    
+    # Move to archive with timestamp
+    local archive_name="$(date +%Y%m%d_%H%M%S)_$(basename "$found_file")"
+    local archive_file="$JOT_DIR/archive/$archive_name"
+    
+    mv "$found_file" "$archive_file"
+    
+    local task_name=$(basename "$found_file" .txt)
+    task_name=${task_name#TASK_*_}  # Remove TASK_DATE_ prefix
+    task_name=${task_name//-/ }  # Replace dashes with spaces
+    
+    echo "✅ Task completed and archived: $task_name"
+    echo "📁 Archived as: $(basename "$archive_file")"
+}
+
+# Help function
+show_help() {
+    cat << EOF
+📝 Jot - Simple Note-Taking CLI
+
+Usage:
+  jot "Note title"       Create a quick note
+  jot task "Task name"   Create a task
+  jot doc "Doc title"    Create a document
+  jot find "keyword"     Search all notes
+  jot list              Show recent notes
+  jot list tasks        Show all tasks
+  jot list docs         Show all documents
+  jot done "task name"  Mark task complete
+  jot help              Show this help
+  jot setup             Initial setup
+
+Examples:
+  jot "Meeting with Sarah"
+  jot task "Call dentist"
+  jot doc "Project plan"
+  jot find "dentist"
+  jot list tasks
+  jot done "dentist"
+
+Notes stored in: $JOT_DIR
+EOF
+}
+
+# Setup function
+setup_jot() {
+    echo "📝 Setting up Jot..."
+    echo "📁 Notes directory: $JOT_DIR"
+    
+    # Create directory structure
+    mkdir -p "$JOT_DIR/notes"
+    mkdir -p "$JOT_DIR/tasks"
+    mkdir -p "$JOT_DIR/docs"
+    mkdir -p "$JOT_DIR/archive"
+    
+    if [[ -d "$JOT_DIR" ]]; then
+        echo "✅ Jot directory structure created successfully!"
+        echo "📁 Notes: $JOT_DIR/notes"
+        echo "📁 Tasks: $JOT_DIR/tasks"
+        echo "📁 Docs: $JOT_DIR/docs"
+        echo "📁 Archive: $JOT_DIR/archive"
+        echo "🎉 Setup complete!"
+        echo "💡 Try: jot \"My first note\""
+    else
+        echo "❌ Failed to create directory"
+    fi
+}
+
+# Run main function with all arguments
+main "$@"
